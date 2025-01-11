@@ -43,9 +43,17 @@ class MusicAgent:
 
     def generate_playlist(self, preferences: MusicPreferences) -> List[Song]:
         try:
+            # Set distribution ratios based on preference
+            distribution_ratios = {
+                "Top Hits": "80% popular songs (0.8-1.0 popularity) and 20% hidden gems (0.1-0.7 popularity)",
+                "Balanced": "50% popular songs (0.8-1.0 popularity) and 50% hidden gems (0.1-0.7 popularity)",
+                "Discovery": "20% popular songs (0.8-1.0 popularity) and 80% hidden gems (0.1-0.7 popularity)"
+            }
+            
             prompt = f"""Generate a playlist of 25 songs for:
             Age: {preferences.age}, Mood: {preferences.mood}
             Genres: {', '.join(preferences.favorite_genres)}
+            Distribution: {distribution_ratios[preferences.distribution]}
             
             Return as JSON array: {{"songs": [
                 {{"title": "name", "artist": "artist", "genre": "genre", "popularity": 0.9}}

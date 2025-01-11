@@ -85,6 +85,16 @@ def main():
     
     agent = MusicAgent()
     
+    # Add distribution explanation
+    st.markdown("""
+    ### 🎵 Hidden Gems Ratio
+    Move the slider to adjust how many lesser-known songs you want in your playlist.
+    - 0% = Only popular hits
+    - 100% = Only hidden gems
+    """)
+    
+    hidden_gems = st.slider("Percentage of Hidden Gems", 0, 100, 30, 10)
+    
     with st.sidebar:
         st.header("Your Preferences")
         age = st.number_input("Age", min_value=13, max_value=100, value=25)
@@ -101,7 +111,12 @@ def main():
         st.warning("Please select at least one genre to continue.")
         return
 
-    preferences = MusicPreferences(age=age, mood=mood, favorite_genres=selected_genres)
+    preferences = MusicPreferences(
+        age=age,
+        mood=mood,
+        favorite_genres=selected_genres,
+        hidden_gems_ratio=hidden_gems
+    )
     
     if st.button("Generate Playlist"):
         with st.spinner("Generating playlist..."):

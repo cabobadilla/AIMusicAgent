@@ -2,6 +2,7 @@ import streamlit as st
 import openai
 from typing import List
 from dataclasses import dataclass
+import json
 
 @dataclass
 class MusicPreferences:
@@ -15,6 +16,15 @@ class Song:
     artist: str
     genre: str
     popularity: float
+
+    @classmethod
+    def from_json(cls, data: Dict[str, Any]) -> 'Song':
+        return cls(
+            title=data.get('title', ''),
+            artist=data.get('artist', ''),
+            genre=data.get('genre', ''),
+            popularity=float(data.get('popularity', 0.5))
+        )
 
 class MusicAgent:
     def __init__(self):
@@ -54,118 +64,89 @@ class MusicAgent:
         - Mood: {preferences.mood}
         - Favorite genres: {', '.join(preferences.favorite_genres)}
 
-        For each song, provide:
-        1. Popular hits (popularity 0.8-1.0): Well-known songs that most people recognize
-        2. Moderate hits (popularity 0.5-0.7): Songs that had some success
-        3. Hidden gems (popularity 0.1-0.4): Lesser-known but quality songs
-
-        Format each song EXACTLY as follows (including the dashes and labels):
-        - Title: [song title]
-        - Artist: [artist name]
-        - Genre: [genre]
-        - Popularity: [score between 0.1 and 1.0, based on song's mainstream recognition]
+        Return the playlist as a JSON array with the following structure for each song:
+        {{
+            "title": "song title",
+            "artist": "artist name",
+            "genre": "genre",
+            "popularity": float between 0.1 and 1.0
+        }}
 
         IMPORTANT:
-        - Use varied popularity scores
-        - Include 40% popular hits, 30% moderate hits, and 30% hidden gems
+        - Include 40% popular hits (popularity 0.8-1.0)
+        - Include 30% moderate hits (popularity 0.5-0.7)
+        - Include 30% hidden gems (popularity 0.1-0.4)
         - Ensure accurate popularity scores (e.g., "Bohemian Rhapsody" by Queen should be 1.0)
-        - Use EXACTLY this format for EACH song, with each field on a new line
+        - Return valid JSON format only
         """
         
         try:
             response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
                 messages=[
-                    {"role": "system", "content": """You are a music expert creating playlists. 
+                    {"role": "system", "content": """You are a music expert creating playlists.
+                    Return responses in valid JSON format only.
                     When assigning popularity scores:
-                    - 0.8-1.0: Major hits everyone knows (e.g., "Billie Jean" by Michael Jackson)
-                    - 0.5-0.7: Songs that had radio play but aren't massive hits
-                    - 0.1-0.4: Lesser-known songs from artists' catalogs or indie tracks
-                    Always provide accurate, varied popularity scores based on real-world recognition."""},
+                    - 0.8-1.0: Major hits everyone knows
+                    - 0.5-0.7: Songs that had radio play
+                    - 0.1-0.4: Lesser-known songs
+                    Format: {"songs": [{song1}, {song2}, ...]}"""},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.7,
                 max_tokens=2000
             )
             
-            playlist = self._parse_playlist_response(response.choices[0].message.content)
-            
-            if not playlist:
-                st.error("Failed to generate playlist. Please try again.")
-                return []
-            
-            # Verify we have a good distribution of popularity scores
-            popular = len([s for s in playlist if s.popularity >= 0.8])
-            moderate = len([s for s in playlist if 0.5 <= s.popularity < 0.8])
-            hidden = len([s for s in playlist if s.popularity < 0.5])
-            
-            st.info(f"""Playlist distribution:
-            - Popular hits ({popular} songs)
-            - Moderate hits ({moderate} songs)
-            - Hidden gems ({hidden} songs)""")
-            
-            return playlist
+            return self._parse_json_response(response.choices[0].message.content)
         except Exception as e:
             st.error(f"Error generating playlist: {str(e)}")
             return []
 
-    def _parse_playlist_response(self, response_text: str) -> List[Song]:
-        songs = []
-        current_song = {}
-        
-        # Print response for debugging
-        # st.write("Debug - API Response:", response_text)
-        
-        lines = [line.strip() for line in response_text.split('\n') if line.strip()]
-        
-        for line in lines:
-            # Remove common prefixes
-            line = line.replace('- ', '').strip()
+    def _parse_json_response(self, response_text: str) -> List[Song]:
+        try:
+            # Clean the response text to ensure it's valid JSON
+            cleaned_text = response_text.strip()
+            if cleaned_text.startswith("```json"):
+                cleaned_text = cleaned_text[7:]
+            if cleaned_text.endswith("```"):
+                cleaned_text = cleaned_text[:-3]
             
-            if 'Title:' in line:
-                if current_song and all(k in current_song for k in ['title', 'artist', 'genre']):
-                    # Add default popularity if missing
-                    if 'popularity' not in current_song:
-                        current_song['popularity'] = 0.5
-                    songs.append(Song(**current_song))
-                    current_song = {}
-                current_song['title'] = line.split('Title:')[1].strip()
-            elif 'Artist:' in line:
-                current_song['artist'] = line.split('Artist:')[1].strip()
-            elif 'Genre:' in line:
-                current_song['genre'] = line.split('Genre:')[1].strip()
-            elif 'Popularity:' in line:
+            # Parse JSON
+            data = json.loads(cleaned_text)
+            
+            # Handle both possible JSON structures
+            songs_data = data.get('songs', []) if isinstance(data, dict) else data
+            
+            # Validate and create Song objects
+            songs = []
+            for song_data in songs_data:
                 try:
-                    popularity = float(line.split('Popularity:')[1].strip())
-                    current_song['popularity'] = max(0.0, min(1.0, popularity))  # Ensure between 0 and 1
-                except:
-                    current_song['popularity'] = 0.5
-        
-        # Add the last song if complete
-        if current_song and all(k in current_song for k in ['title', 'artist', 'genre']):
-            if 'popularity' not in current_song:
-                current_song['popularity'] = 0.5
-            songs.append(Song(**current_song))
-        
-        # Ensure we have songs
-        if not songs:
-            st.error("Failed to parse the playlist. Trying alternative format...")
-            # Try alternative parsing if the response format is different
-            try:
-                lines = response_text.split('\n')
-                for line in lines:
-                    if ' by ' in line and ' (' in line and ')' in line:
-                        title = line.split(' by ')[0].strip('0123456789.- ')
-                        artist = line.split(' by ')[1].split(' (')[0].strip()
-                        genre = line.split('(')[1].split(')')[0].strip()
-                        # Add default popularity for alternative format
-                        songs.append(Song(title=title, artist=artist, genre=genre, popularity=0.5))
-            except Exception as e:
-                st.error(f"Alternative parsing failed: {str(e)}")
-        
-        # Sort songs by popularity in descending order
-        songs.sort(key=lambda x: x.popularity, reverse=True)
-        return songs[:25]
+                    if all(k in song_data for k in ['title', 'artist', 'genre', 'popularity']):
+                        songs.append(Song.from_json(song_data))
+                except (ValueError, TypeError) as e:
+                    st.warning(f"Skipped invalid song entry: {str(e)}")
+            
+            # Sort by popularity
+            songs.sort(key=lambda x: x.popularity, reverse=True)
+            
+            # Verify distribution
+            if songs:
+                popular = len([s for s in songs if s.popularity >= 0.8])
+                moderate = len([s for s in songs if 0.5 <= s.popularity < 0.8])
+                hidden = len([s for s in songs if s.popularity < 0.5])
+                
+                st.info(f"""Playlist distribution:
+                - Popular hits ({popular} songs)
+                - Moderate hits ({moderate} songs)
+                - Hidden gems ({hidden} songs)""")
+            
+            return songs[:25]
+        except json.JSONDecodeError as e:
+            st.error(f"Invalid JSON format: {str(e)}")
+            return []
+        except Exception as e:
+            st.error(f"Error parsing response: {str(e)}")
+            return []
 
 def main():
     st.set_page_config(page_title="AI Music Playlist Generator", page_icon="🎵")
@@ -206,9 +187,14 @@ def main():
         favorite_genres=selected_genres
     )
     
-    if st.button("Generate Playlist"):
+    if st.button("Generate Playlist") and total_pct == 100:
         with st.spinner("Generating your personalized playlist..."):
-            playlist = agent.generate_playlist(preferences)
+            playlist = agent.generate_playlist(
+                preferences, 
+                popular_pct, 
+                moderate_pct, 
+                hidden_pct
+            )
         
         st.success("Playlist generated successfully!")
         

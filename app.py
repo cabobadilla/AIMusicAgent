@@ -55,7 +55,7 @@ class MusicAgent:
         else:
             return "45+"
 
-    def generate_playlist(self, preferences: MusicPreferences) -> List[Song]:
+    def generate_playlist(self, preferences: MusicPreferences, popular_pct: int, moderate_pct: int, hidden_pct: int) -> List[Song]:
         age_group = self.get_age_group(preferences.age)
         
         prompt = f"""
@@ -64,106 +64,57 @@ class MusicAgent:
         - Mood: {preferences.mood}
         - Favorite genres: {', '.join(preferences.favorite_genres)}
 
-        Return the playlist as a JSON array with the following structure for each song:
-        {{
-            "title": "song title",
-            "artist": "artist name",
-            "genre": "genre",
-            "popularity": float between 0.1 and 1.0
-        }}
+        Return the playlist as a JSON array with the following structure:
+        {{"songs": [
+            {{"title": "song title", "artist": "artist name", "genre": "genre", "popularity": 0.9}}
+        ]}}
 
-        IMPORTANT:
-        - Include 40% popular hits (popularity 0.8-1.0)
-        - Include 30% moderate hits (popularity 0.5-0.7)
-        - Include 30% hidden gems (popularity 0.1-0.4)
-        - Ensure accurate popularity scores (e.g., "Bohemian Rhapsody" by Queen should be 1.0)
-        - Return valid JSON format only
+        Distribution:
+        - {popular_pct}% popular hits (popularity 0.8-1.0)
+        - {moderate_pct}% moderate hits (popularity 0.5-0.7)
+        - {hidden_pct}% hidden gems (popularity 0.1-0.4)
         """
-        
+
         try:
             response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
                 messages=[
-                    {"role": "system", "content": """You are a music expert creating playlists.
-                    Return responses in valid JSON format only.
-                    When assigning popularity scores:
-                    - 0.8-1.0: Major hits everyone knows
-                    - 0.5-0.7: Songs that had radio play
-                    - 0.1-0.4: Lesser-known songs
-                    Format: {"songs": [{song1}, {song2}, ...]}"""},
+                    {"role": "system", "content": "You are a music expert. Return only valid JSON."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.7,
-                max_tokens=2000
+                temperature=0.7
             )
             
             return self._parse_json_response(response.choices[0].message.content)
         except Exception as e:
-            st.error(f"Error generating playlist: {str(e)}")
+            st.error(f"Error: {str(e)}")
             return []
 
     def _parse_json_response(self, response_text: str) -> List[Song]:
         try:
-            # Clean the response text to ensure it's valid JSON
-            cleaned_text = response_text.strip()
-            if cleaned_text.startswith("```json"):
-                cleaned_text = cleaned_text[7:]
-            if cleaned_text.endswith("```"):
-                cleaned_text = cleaned_text[:-3]
-            
-            # Parse JSON
-            data = json.loads(cleaned_text)
-            
-            # Handle both possible JSON structures
-            songs_data = data.get('songs', []) if isinstance(data, dict) else data
-            
-            # Validate and create Song objects
+            data = json.loads(response_text)
+            songs_data = data.get('songs', [])
             songs = []
+            
             for song_data in songs_data:
-                try:
-                    if all(k in song_data for k in ['title', 'artist', 'genre', 'popularity']):
-                        songs.append(Song.from_json(song_data))
-                except (ValueError, TypeError) as e:
-                    st.warning(f"Skipped invalid song entry: {str(e)}")
+                if all(k in song_data for k in ['title', 'artist', 'genre', 'popularity']):
+                    songs.append(Song.from_json(song_data))
             
-            # Sort by popularity
-            songs.sort(key=lambda x: x.popularity, reverse=True)
-            
-            # Verify distribution
-            if songs:
-                popular = len([s for s in songs if s.popularity >= 0.8])
-                moderate = len([s for s in songs if 0.5 <= s.popularity < 0.8])
-                hidden = len([s for s in songs if s.popularity < 0.5])
-                
-                st.info(f"""Playlist distribution:
-                - Popular hits ({popular} songs)
-                - Moderate hits ({moderate} songs)
-                - Hidden gems ({hidden} songs)""")
-            
-            return songs[:25]
-        except json.JSONDecodeError as e:
-            st.error(f"Invalid JSON format: {str(e)}")
-            return []
+            return sorted(songs, key=lambda x: x.popularity, reverse=True)[:25]
         except Exception as e:
             st.error(f"Error parsing response: {str(e)}")
             return []
 
 def main():
     st.set_page_config(page_title="AI Music Playlist Generator", page_icon="🎵")
-    
     st.title("🎵 AI Music Playlist Generator")
-    st.write("Generate personalized playlists based on your age, mood, and music preferences!")
     
     agent = MusicAgent()
     
     with st.sidebar:
         st.header("Your Preferences")
         age = st.number_input("Age", min_value=13, max_value=100, value=25)
-        
-        mood = st.selectbox(
-            "Current Mood",
-            options=agent.mood_options
-        )
+        mood = st.selectbox("Current Mood", options=agent.mood_options)
         
         age_group = agent.get_age_group(age)
         recommended_genres = agent.genre_by_age[age_group]
@@ -178,50 +129,41 @@ def main():
         )
 
         st.header("Song Distribution")
-        st.write("Adjust the percentage of each song type:")
-        
-        popular_pct = st.slider("Popular Hits (0.8-1.0)", 0, 100, 40, 5)
-        moderate_pct = st.slider("Moderate Hits (0.5-0.7)", 0, 100, 30, 5)
-        hidden_pct = st.slider("Hidden Gems (0.1-0.4)", 0, 100, 30, 5)
-        
-        total_pct = popular_pct + moderate_pct + hidden_pct
+        popular_pct = st.slider("Popular Hits", 0, 100, 40, 5)
+        moderate_pct = st.slider("Moderate Hits", 0, 100, 30, 5)
+        hidden_pct = st.slider("Hidden Gems", 0, 100, 30, 5)
 
     if not selected_genres:
         st.warning("Please select at least one genre to continue.")
         return
 
-    preferences = MusicPreferences(
-        age=age,
-        mood=mood,
-        favorite_genres=selected_genres
-    )
+    total_pct = popular_pct + moderate_pct + hidden_pct
+    if total_pct != 100:
+        st.error("Percentages must sum to 100%")
+        return
+
+    preferences = MusicPreferences(age=age, mood=mood, favorite_genres=selected_genres)
     
     if st.button("Generate Playlist"):
-        if total_pct != 100:
-            st.error("Percentages must sum to 100%")
-            return
+        playlist = agent.generate_playlist(preferences, popular_pct, moderate_pct, hidden_pct)
+        
+        if playlist:
+            st.success("Playlist generated successfully!")
             
-        with st.spinner("Generating your personalized playlist..."):
-            playlist = agent.generate_playlist(preferences)
-        
-        st.success("Playlist generated successfully!")
-        
-        st.header("Your Personalized Playlist")
-        
-        cols = st.columns([1, 2, 2, 2, 1])
-        cols[0].write("**#**")
-        cols[1].write("**Song**")
-        cols[2].write("**Artist**")
-        cols[3].write("**Genre**")
-        cols[4].write("**Popularity**")
-        
-        for i, song in enumerate(playlist, 1):
             cols = st.columns([1, 2, 2, 2, 1])
-            cols[0].write(f"{i}.")
-            cols[1].write(song.title)
-            cols[2].write(song.artist)
-            cols[3].write(song.genre)
-            cols[4].write(f"{song.popularity:.2f}")
+            cols[0].write("**#**")
+            cols[1].write("**Song**")
+            cols[2].write("**Artist**")
+            cols[3].write("**Genre**")
+            cols[4].write("**Rating**")
+            
+            for i, song in enumerate(playlist, 1):
+                cols = st.columns([1, 2, 2, 2, 1])
+                cols[0].write(f"{i}.")
+                cols[1].write(song.title)
+                cols[2].write(song.artist)
+                cols[3].write(song.genre)
+                cols[4].write(f"{song.popularity:.2f}")
 
 if __name__ == "__main__":
     main() 

@@ -54,21 +54,34 @@ class MusicAgent:
         - Mood: {preferences.mood}
         - Favorite genres: {', '.join(preferences.favorite_genres)}
 
+        For each song, provide:
+        1. Popular hits (popularity 0.8-1.0): Well-known songs that most people recognize
+        2. Moderate hits (popularity 0.5-0.7): Songs that had some success
+        3. Hidden gems (popularity 0.1-0.4): Lesser-known but quality songs
+
         Format each song EXACTLY as follows (including the dashes and labels):
         - Title: [song title]
         - Artist: [artist name]
         - Genre: [genre]
+        - Popularity: [score between 0.1 and 1.0, based on song's mainstream recognition]
 
-        Include both popular hits and lesser-known gems.
-        Ensure songs flow well together and match the mood.
-        IMPORTANT: Use EXACTLY this format for EACH song, with each field on a new line.
+        IMPORTANT:
+        - Use varied popularity scores
+        - Include 40% popular hits, 30% moderate hits, and 30% hidden gems
+        - Ensure accurate popularity scores (e.g., "Bohemian Rhapsody" by Queen should be 1.0)
+        - Use EXACTLY this format for EACH song, with each field on a new line
         """
         
         try:
             response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
                 messages=[
-                    {"role": "system", "content": "You are a music expert creating playlists. Always format songs exactly as specified."},
+                    {"role": "system", "content": """You are a music expert creating playlists. 
+                    When assigning popularity scores:
+                    - 0.8-1.0: Major hits everyone knows (e.g., "Billie Jean" by Michael Jackson)
+                    - 0.5-0.7: Songs that had radio play but aren't massive hits
+                    - 0.1-0.4: Lesser-known songs from artists' catalogs or indie tracks
+                    Always provide accurate, varied popularity scores based on real-world recognition."""},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.7,
@@ -80,6 +93,16 @@ class MusicAgent:
             if not playlist:
                 st.error("Failed to generate playlist. Please try again.")
                 return []
+            
+            # Verify we have a good distribution of popularity scores
+            popular = len([s for s in playlist if s.popularity >= 0.8])
+            moderate = len([s for s in playlist if 0.5 <= s.popularity < 0.8])
+            hidden = len([s for s in playlist if s.popularity < 0.5])
+            
+            st.info(f"""Playlist distribution:
+            - Popular hits ({popular} songs)
+            - Moderate hits ({moderate} songs)
+            - Hidden gems ({hidden} songs)""")
             
             return playlist
         except Exception as e:

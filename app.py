@@ -48,27 +48,42 @@ class MusicAgent:
         age_group = self.get_age_group(preferences.age)
         
         prompt = f"""
-        Generate a playlist of exactly 25 songs based on the following criteria:
+        Create a playlist of exactly 25 songs matching these criteria:
         - Age group: {age_group}
         - Mood: {preferences.mood}
         - Favorite genres: {', '.join(preferences.favorite_genres)}
-        
-        For each song, provide:
+
+        Format each song EXACTLY as follows (including the dashes and labels):
         - Title: [song title]
         - Artist: [artist name]
         - Genre: [genre]
-        
-        Include a mix of popular hits and hidden gems.
-        Make sure the songs flow well together and match the mood.
+
+        Include both popular hits and lesser-known gems.
+        Ensure songs flow well together and match the mood.
+        IMPORTANT: Use EXACTLY this format for EACH song, with each field on a new line.
         """
         
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.7
-        )
-        
-        return self._parse_playlist_response(response.choices[0].message.content)
+        try:
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a music expert creating playlists. Always format songs exactly as specified."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.7,
+                max_tokens=2000
+            )
+            
+            playlist = self._parse_playlist_response(response.choices[0].message.content)
+            
+            if not playlist:
+                st.error("Failed to generate playlist. Please try again.")
+                return []
+            
+            return playlist
+        except Exception as e:
+            st.error(f"Error generating playlist: {str(e)}")
+            return []
 
     def _parse_playlist_response(self, response_text: str) -> List[Song]:
         songs = []

@@ -3,7 +3,6 @@ import openai
 from typing import List
 from dataclasses import dataclass
 
-# Data Classes
 @dataclass
 class MusicPreferences:
     age: int
@@ -15,7 +14,6 @@ class Song:
     title: str
     artist: str
     genre: str
-    popularity: float
 
 class MusicAgent:
     def __init__(self):
@@ -46,27 +44,22 @@ class MusicAgent:
         else:
             return "45+"
 
-    def generate_initial_playlist(self, preferences: MusicPreferences) -> List[Song]:
+    def generate_playlist(self, preferences: MusicPreferences) -> List[Song]:
         age_group = self.get_age_group(preferences.age)
         
         prompt = f"""
-        Generate a playlist of 50 songs based on the following criteria:
+        Generate a playlist of exactly 25 songs based on the following criteria:
         - Age group: {age_group}
         - Mood: {preferences.mood}
         - Favorite genres: {', '.join(preferences.favorite_genres)}
         
         For each song, provide:
-        - Song title
-        - Artist name
-        - Genre
-        - Popularity score (0-1)
-        
-        Include a mix of popular and lesser-known songs.
-        Format each song as:
         - Title: [song title]
         - Artist: [artist name]
         - Genre: [genre]
-        - Popularity: [score]
+        
+        Include a mix of popular hits and hidden gems.
+        Make sure the songs flow well together and match the mood.
         """
         
         response = openai.ChatCompletion.create(
@@ -75,37 +68,7 @@ class MusicAgent:
             temperature=0.7
         )
         
-        songs = self._parse_playlist_response(response.choices[0].message.content)
-        return songs
-
-    def refine_playlist(self, initial_playlist: List[Song]) -> List[Song]:
-        songs_str = "\n".join([f"{s.title} by {s.artist} ({s.genre})" for s in initial_playlist])
-        
-        prompt = f"""
-        From the following 50 songs, select the best 25 songs that provide:
-        - A balanced mix of popular hits and hidden gems
-        - Good flow between songs
-        - Variety in genres while maintaining cohesion
-        - Emotional range appropriate for the mood
-        
-        Format each selected song as:
-        - Title: [song title]
-        - Artist: [artist name]
-        - Genre: [genre]
-        - Popularity: [score]
-        
-        Current playlist:
-        {songs_str}
-        """
-        
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.6
-        )
-        
-        refined_songs = self._parse_playlist_response(response.choices[0].message.content)
-        return refined_songs[:25]
+        return self._parse_playlist_response(response.choices[0].message.content)
 
     def _parse_playlist_response(self, response_text: str) -> List[Song]:
         songs = []
@@ -121,27 +84,20 @@ class MusicAgent:
                     current_song['artist'] = line.split('Artist:')[1].strip()
                 elif 'Genre:' in line:
                     current_song['genre'] = line.split('Genre:')[1].strip()
-                elif 'Popularity:' in line:
-                    try:
-                        current_song['popularity'] = float(line.split('Popularity:')[1].strip())
+                    if all(k in current_song for k in ['title', 'artist', 'genre']):
                         songs.append(Song(**current_song))
                         current_song = {}
-                    except:
-                        current_song['popularity'] = 0.5
         
-        return songs
+        return songs[:25]
 
-# Streamlit UI
 def main():
     st.set_page_config(page_title="AI Music Playlist Generator", page_icon="🎵")
     
     st.title("🎵 AI Music Playlist Generator")
     st.write("Generate personalized playlists based on your age, mood, and music preferences!")
     
-    # Initialize the agent
     agent = MusicAgent()
     
-    # Create sidebar for inputs
     with st.sidebar:
         st.header("Your Preferences")
         age = st.number_input("Age", min_value=13, max_value=100, value=25)
@@ -167,7 +123,6 @@ def main():
         st.warning("Please select at least one genre to continue.")
         return
 
-    # Create preferences object
     preferences = MusicPreferences(
         age=age,
         mood=mood,
@@ -175,34 +130,28 @@ def main():
     )
     
     if st.button("Generate Playlist"):
-        with st.spinner("Generating initial playlist..."):
-            initial_playlist = agent.generate_initial_playlist(preferences)
-        
-        with st.spinner("Refining playlist..."):
-            final_playlist = agent.refine_playlist(initial_playlist)
+        with st.spinner("Generating your personalized playlist..."):
+            playlist = agent.generate_playlist(preferences)
         
         st.success("Playlist generated successfully!")
         
-        # Display the playlist
         st.header("Your Personalized Playlist")
         
-        # Create three columns for better visualization
         cols = st.columns([1, 2, 2, 2])
         cols[0].write("**#**")
         cols[1].write("**Song**")
         cols[2].write("**Artist**")
         cols[3].write("**Genre**")
         
-        for i, song in enumerate(final_playlist, 1):
+        for i, song in enumerate(playlist, 1):
             cols = st.columns([1, 2, 2, 2])
             cols[0].write(f"{i}.")
             cols[1].write(song.title)
             cols[2].write(song.artist)
             cols[3].write(song.genre)
         
-        # Add export option
         playlist_text = "\n".join([f"{i}. {song.title} by {song.artist} ({song.genre})" 
-                                 for i, song in enumerate(final_playlist, 1)])
+                                for i, song in enumerate(playlist, 1)])
         st.download_button(
             label="Download Playlist",
             data=playlist_text,

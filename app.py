@@ -1,6 +1,6 @@
 import streamlit as st
 import openai
-from typing import List
+from typing import List, Dict, Any
 from dataclasses import dataclass
 import json
 

@@ -17,15 +17,6 @@ class Song:
     genre: str
     popularity: float
 
-    @classmethod
-    def from_json(cls, data: Dict[str, Any]) -> 'Song':
-        return cls(
-            title=data.get('title', ''),
-            artist=data.get('artist', ''),
-            genre=data.get('genre', ''),
-            popularity=float(data.get('popularity', 0.5))
-        )
-
 class MusicAgent:
     def __init__(self):
         openai.api_key = st.secrets["OPENAI_API_KEY"]
@@ -37,72 +28,51 @@ class MusicAgent:
         
         self.genre_by_age = {
             "13-17": ["Pop", "Hip Hop", "K-pop", "Alternative", "Indie"],
-            "18-24": ["Pop", "Hip Hop", "R&B", "Alternative", "Electronic", "Indie"],
-            "25-34": ["Pop", "Rock", "Hip Hop", "R&B", "Alternative", "Electronic"],
-            "35-44": ["Rock", "Pop", "Alternative", "Country", "R&B", "Jazz"],
+            "18-24": ["Pop", "Hip Hop", "R&B", "Alternative", "Electronic"],
+            "25-34": ["Pop", "Rock", "Hip Hop", "R&B", "Electronic"],
+            "35-44": ["Rock", "Pop", "Alternative", "Country", "Jazz"],
             "45+": ["Classic Rock", "Jazz", "Classical", "Country", "Folk"]
         }
 
     def get_age_group(self, age: int) -> str:
-        if age < 18:
-            return "13-17"
-        elif age < 25:
-            return "18-24"
-        elif age < 35:
-            return "25-34"
-        elif age < 45:
-            return "35-44"
-        else:
-            return "45+"
+        if age < 18: return "13-17"
+        elif age < 25: return "18-24"
+        elif age < 35: return "25-34"
+        elif age < 45: return "35-44"
+        else: return "45+"
 
-    def generate_playlist(self, preferences: MusicPreferences, popular_pct: int, moderate_pct: int, hidden_pct: int) -> List[Song]:
-        age_group = self.get_age_group(preferences.age)
-        
-        prompt = f"""
-        Create a playlist of exactly 25 songs matching these criteria:
-        - Age group: {age_group}
-        - Mood: {preferences.mood}
-        - Favorite genres: {', '.join(preferences.favorite_genres)}
-
-        Return the playlist as a JSON array with the following structure:
-        {{"songs": [
-            {{"title": "song title", "artist": "artist name", "genre": "genre", "popularity": 0.9}}
-        ]}}
-
-        Distribution:
-        - {popular_pct}% popular hits (popularity 0.8-1.0)
-        - {moderate_pct}% moderate hits (popularity 0.5-0.7)
-        - {hidden_pct}% hidden gems (popularity 0.1-0.4)
-        """
-
+    def generate_playlist(self, preferences: MusicPreferences) -> List[Song]:
         try:
+            prompt = f"""Generate a playlist of 25 songs for:
+            Age: {preferences.age}, Mood: {preferences.mood}
+            Genres: {', '.join(preferences.favorite_genres)}
+            
+            Return as JSON array: {{"songs": [
+                {{"title": "name", "artist": "artist", "genre": "genre", "popularity": 0.9}}
+            ]}}"""
+
             response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": "You are a music expert. Return only valid JSON."},
-                    {"role": "user", "content": prompt}
-                ],
+                messages=[{"role": "user", "content": prompt}],
                 temperature=0.7
             )
             
-            return self._parse_json_response(response.choices[0].message.content)
-        except Exception as e:
-            st.error(f"Error: {str(e)}")
-            return []
-
-    def _parse_json_response(self, response_text: str) -> List[Song]:
-        try:
-            data = json.loads(response_text)
-            songs_data = data.get('songs', [])
+            # Parse response
+            content = response.choices[0].message.content
+            data = json.loads(content)
             songs = []
             
-            for song_data in songs_data:
-                if all(k in song_data for k in ['title', 'artist', 'genre', 'popularity']):
-                    songs.append(Song.from_json(song_data))
+            for song_data in data.get('songs', []):
+                songs.append(Song(
+                    title=song_data.get('title', ''),
+                    artist=song_data.get('artist', ''),
+                    genre=song_data.get('genre', ''),
+                    popularity=float(song_data.get('popularity', 0.5))
+                ))
             
-            return sorted(songs, key=lambda x: x.popularity, reverse=True)[:25]
+            return sorted(songs, key=lambda x: x.popularity, reverse=True)
         except Exception as e:
-            st.error(f"Error parsing response: {str(e)}")
+            st.error(f"Error generating playlist: {str(e)}")
             return []
 
 def main():
@@ -116,54 +86,28 @@ def main():
         age = st.number_input("Age", min_value=13, max_value=100, value=25)
         mood = st.selectbox("Current Mood", options=agent.mood_options)
         
-        age_group = agent.get_age_group(age)
-        recommended_genres = agent.genre_by_age[age_group]
-        
-        st.write("Recommended genres for your age group:")
-        st.write(", ".join(recommended_genres))
-        
+        recommended_genres = agent.genre_by_age[agent.get_age_group(age)]
         selected_genres = st.multiselect(
             "Select your favorite genres",
             options=recommended_genres,
             default=recommended_genres[:2]
         )
 
-        st.header("Song Distribution")
-        popular_pct = st.slider("Popular Hits", 0, 100, 40, 5)
-        moderate_pct = st.slider("Moderate Hits", 0, 100, 30, 5)
-        hidden_pct = st.slider("Hidden Gems", 0, 100, 30, 5)
-
     if not selected_genres:
         st.warning("Please select at least one genre to continue.")
-        return
-
-    total_pct = popular_pct + moderate_pct + hidden_pct
-    if total_pct != 100:
-        st.error("Percentages must sum to 100%")
         return
 
     preferences = MusicPreferences(age=age, mood=mood, favorite_genres=selected_genres)
     
     if st.button("Generate Playlist"):
-        playlist = agent.generate_playlist(preferences, popular_pct, moderate_pct, hidden_pct)
+        with st.spinner("Generating playlist..."):
+            playlist = agent.generate_playlist(preferences)
         
         if playlist:
-            st.success("Playlist generated successfully!")
-            
-            cols = st.columns([1, 2, 2, 2, 1])
-            cols[0].write("**#**")
-            cols[1].write("**Song**")
-            cols[2].write("**Artist**")
-            cols[3].write("**Genre**")
-            cols[4].write("**Rating**")
+            st.success("Playlist generated!")
             
             for i, song in enumerate(playlist, 1):
-                cols = st.columns([1, 2, 2, 2, 1])
-                cols[0].write(f"{i}.")
-                cols[1].write(song.title)
-                cols[2].write(song.artist)
-                cols[3].write(song.genre)
-                cols[4].write(f"{song.popularity:.2f}")
+                st.write(f"{i}. {song.title} by {song.artist} ({song.genre}) - {song.popularity:.1f}")
 
 if __name__ == "__main__":
     main() 

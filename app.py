@@ -14,6 +14,7 @@ class Song:
     title: str
     artist: str
     genre: str
+    popularity: float
 
 class MusicAgent:
     def __init__(self):
@@ -152,21 +153,25 @@ def main():
         
         st.header("Your Personalized Playlist")
         
-        cols = st.columns([1, 2, 2, 2])
+        cols = st.columns([1, 2, 2, 2, 1])
         cols[0].write("**#**")
         cols[1].write("**Song**")
         cols[2].write("**Artist**")
         cols[3].write("**Genre**")
+        cols[4].write("**Popularity**")
         
         for i, song in enumerate(playlist, 1):
-            cols = st.columns([1, 2, 2, 2])
+            cols = st.columns([1, 2, 2, 2, 1])
             cols[0].write(f"{i}.")
             cols[1].write(song.title)
             cols[2].write(song.artist)
             cols[3].write(song.genre)
+            cols[4].write(f"{song.popularity:.2f}")
         
-        playlist_text = "\n".join([f"{i}. {song.title} by {song.artist} ({song.genre})" 
-                                for i, song in enumerate(playlist, 1)])
+        playlist_text = "\n".join([
+            f"{i}. {song.title} by {song.artist} ({song.genre}) - Popularity: {song.popularity:.2f}" 
+            for i, song in enumerate(playlist, 1)
+        ])
         st.download_button(
             label="Download Playlist",
             data=playlist_text,

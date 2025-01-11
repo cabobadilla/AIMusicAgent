@@ -177,6 +177,15 @@ def main():
             default=recommended_genres[:2]
         )
 
+        st.header("Song Distribution")
+        st.write("Adjust the percentage of each song type:")
+        
+        popular_pct = st.slider("Popular Hits (0.8-1.0)", 0, 100, 40, 5)
+        moderate_pct = st.slider("Moderate Hits (0.5-0.7)", 0, 100, 30, 5)
+        hidden_pct = st.slider("Hidden Gems (0.1-0.4)", 0, 100, 30, 5)
+        
+        total_pct = popular_pct + moderate_pct + hidden_pct
+
     if not selected_genres:
         st.warning("Please select at least one genre to continue.")
         return
@@ -187,20 +196,18 @@ def main():
         favorite_genres=selected_genres
     )
     
-    if st.button("Generate Playlist") and total_pct == 100:
+    if st.button("Generate Playlist"):
+        if total_pct != 100:
+            st.error("Percentages must sum to 100%")
+            return
+            
         with st.spinner("Generating your personalized playlist..."):
-            playlist = agent.generate_playlist(
-                preferences, 
-                popular_pct, 
-                moderate_pct, 
-                hidden_pct
-            )
+            playlist = agent.generate_playlist(preferences)
         
         st.success("Playlist generated successfully!")
         
         st.header("Your Personalized Playlist")
         
-        # Create columns for better visualization
         cols = st.columns([1, 2, 2, 2, 1])
         cols[0].write("**#**")
         cols[1].write("**Song**")

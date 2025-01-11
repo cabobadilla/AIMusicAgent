@@ -88,22 +88,60 @@ class MusicAgent:
 
     def _parse_playlist_response(self, response_text: str) -> List[Song]:
         songs = []
-        lines = response_text.strip().split('\n')
         current_song = {}
         
-        for line in lines:
-            if line.startswith('- '):
-                line = line[2:]
-                if 'Title:' in line:
-                    current_song['title'] = line.split('Title:')[1].strip()
-                elif 'Artist:' in line:
-                    current_song['artist'] = line.split('Artist:')[1].strip()
-                elif 'Genre:' in line:
-                    current_song['genre'] = line.split('Genre:')[1].strip()
-                    if all(k in current_song for k in ['title', 'artist', 'genre']):
-                        songs.append(Song(**current_song))
-                        current_song = {}
+        # Print response for debugging
+        # st.write("Debug - API Response:", response_text)
         
+        lines = [line.strip() for line in response_text.split('\n') if line.strip()]
+        
+        for line in lines:
+            # Remove common prefixes
+            line = line.replace('- ', '').strip()
+            
+            if 'Title:' in line:
+                if current_song and all(k in current_song for k in ['title', 'artist', 'genre']):
+                    # Add default popularity if missing
+                    if 'popularity' not in current_song:
+                        current_song['popularity'] = 0.5
+                    songs.append(Song(**current_song))
+                    current_song = {}
+                current_song['title'] = line.split('Title:')[1].strip()
+            elif 'Artist:' in line:
+                current_song['artist'] = line.split('Artist:')[1].strip()
+            elif 'Genre:' in line:
+                current_song['genre'] = line.split('Genre:')[1].strip()
+            elif 'Popularity:' in line:
+                try:
+                    popularity = float(line.split('Popularity:')[1].strip())
+                    current_song['popularity'] = max(0.0, min(1.0, popularity))  # Ensure between 0 and 1
+                except:
+                    current_song['popularity'] = 0.5
+        
+        # Add the last song if complete
+        if current_song and all(k in current_song for k in ['title', 'artist', 'genre']):
+            if 'popularity' not in current_song:
+                current_song['popularity'] = 0.5
+            songs.append(Song(**current_song))
+        
+        # Ensure we have songs
+        if not songs:
+            st.error("Failed to parse the playlist. Trying alternative format...")
+            # Try alternative parsing if the response format is different
+            try:
+                lines = response_text.split('\n')
+                for line in lines:
+                    if ' by ' in line and ' (' in line and ')' in line:
+                        title = line.split(' by ')[0].strip('0123456789.- ')
+                        artist = line.split(' by ')[1].split(' (')[0].strip()
+                        genre = line.split('(')[1].split(')')[0].strip()
+                        # Add default popularity for alternative format
+                        songs.append(Song(title=title, artist=artist, genre=genre, popularity=0.5))
+            except Exception as e:
+                st.error(f"Alternative parsing failed: {str(e)}")
+        
+        # Sort songs by popularity in descending order
+        songs.sort(key=lambda x: x.popularity, reverse=True)
         return songs[:25]
 
 def main():

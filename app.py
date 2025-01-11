@@ -215,18 +215,20 @@ def main():
         st.header("Your Personalized Playlist")
         
         # Create columns for better visualization
-        cols = st.columns([1, 2, 2, 2])
+        cols = st.columns([1, 2, 2, 2, 1])
         cols[0].write("**#**")
         cols[1].write("**Song**")
         cols[2].write("**Artist**")
         cols[3].write("**Genre**")
+        cols[4].write("**Popularity**")
         
         for i, song in enumerate(playlist, 1):
-            cols = st.columns([1, 2, 2, 2])
+            cols = st.columns([1, 2, 2, 2, 1])
             cols[0].write(f"{i}.")
             cols[1].write(song.title)
             cols[2].write(song.artist)
             cols[3].write(song.genre)
+            cols[4].write(f"{song.popularity:.2f}")
 
 if __name__ == "__main__":
     main() 

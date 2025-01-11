@@ -125,8 +125,22 @@ def main():
         if playlist:
             st.success("Playlist generated!")
             
+            # Create columns for the table header
+            cols = st.columns([3, 2, 2, 1])
+            cols[0].markdown("**Song**")
+            cols[1].markdown("**Artist**")
+            cols[2].markdown("**Genre**")
+            cols[3].markdown("**Rating**")
+            
+            # Display each song in the table
             for i, song in enumerate(playlist, 1):
-                st.write(f"{i}. {song.title} by {song.artist} ({song.genre}) - {song.popularity:.1f}")
+                cols = st.columns([3, 2, 2, 1])
+                cols[0].write(f"{i}. {song.title}")
+                cols[1].write(song.artist)
+                cols[2].write(song.genre)
+                # Convert popularity to stars (1-5)
+                stars = "⭐" * int(round(song.popularity * 5))
+                cols[3].write(stars)
 
 if __name__ == "__main__":
     main() 
